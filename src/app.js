@@ -1,21 +1,45 @@
-const express = require('express');
-const app = express();
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import { SocketConfig } from './config/SocketConfig.js';
+import { ServiceFactory } from './factories/ServiceFactory.js';
 
-// Porta dinâmica (importante para o EasyPanel)
-const PORT = process.env.PORT || 3000;
-
-// Middleware para JSON
-app.use(express.json());
-
-// Rota básica
-app.get('/', (req, res) => {
-    res.json({ 
-        message: 'API funcionando!', 
-        timestamp: new Date().toISOString() 
+export class App {
+  constructor() {
+    this.app = express();
+    this.server = createServer(this.app);
+    this.io = new Server(this.server, SocketConfig.getConfig());
+    
+    this.initializeServices();
+    this.setupMiddleware();
+    this.setupRoutes();
+    this.setupWebSocket();
+  }
+  
+  initializeServices() {
+    this.logger = ServiceFactory.createLogger();
+    this.messageService = ServiceFactory.createMessageService(this.io);
+    this.socketHandler = ServiceFactory.createSocketHandler(this.messageService, this.logger);
+    this.healthController = ServiceFactory.createHealthController(this.logger);
+  }
+  
+  setupMiddleware() {
+    this.app.use(express.json());
+    this.app.use(express.static('public')); // Para servir arquivos estáticos
+  }
+  
+  setupRoutes() {
+    this.app.get('/', (req, res) => this.healthController.getHealth(req, res));
+    this.app.get('/health', (req, res) => this.healthController.getHealth(req, res));
+  }
+  
+  setupWebSocket() {
+    this.io.on('connection', (socket) => {
+      this.socketHandler.handleConnection(socket);
     });
-});
-
-// Iniciar servidor
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
-});
+  }
+  
+  getServer() {
+    return this.server;
+  }
+}
